@@ -89,10 +89,6 @@ namespace MonoDevelop.CodeIssues
 
 			try {
 				foreach (var type in asm.GetTypes ()) {
-					var notPortedYetAttribute = (NotPortedYetAttribute)type.GetCustomAttributes (typeof(NotPortedYetAttribute), false).FirstOrDefault ();
-					if (notPortedYetAttribute!= null) {
-						continue;
-					}
 
 					var analyzerAttr = (DiagnosticAnalyzerAttribute)type.GetCustomAttributes (typeof (DiagnosticAnalyzerAttribute), false).FirstOrDefault ();
 					if (analyzerAttr != null) {
