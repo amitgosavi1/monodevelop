@@ -50,14 +50,41 @@ using MonoDevelop.Core.AddIns;
 using Microsoft.CodeAnalysis.Internal.Log;
 using Microsoft.CodeAnalysis.Shared.Utilities;
 using MonoDevelop.Ide.Composition;
+using Microsoft.CodeAnalysis.Diagnostics;
+using Microsoft.CodeAnalysis.SolutionCrawler;
+using System.Composition;
+
 
 namespace MonoDevelop.Ide.TypeSystem
 {
+	[ExportIncrementalAnalyzerProvider(
+        highPriorityForActiveFile: true, name: WellKnownSolutionCrawlerAnalyzers.Diagnostic,
+        workspaceKinds: new string[] { WorkspaceKind.Host, WorkspaceKind.Interactive, WorkspaceKind.AnyCodeRoslynWorkspace })]
+
+	class MyIncrementalAnlyzer : IIncrementalAnalyzerProvider
+	{
+		DiagnosticAnalyzerService service;
+		[ImportingConstructor]
+		public MyIncrementalAnlyzer (IDiagnosticAnalyzerService service)
+		{
+			this.service = (DiagnosticAnalyzerService)service;
+		}
+		public IIncrementalAnalyzer CreateIncrementalAnalyzer (Microsoft.CodeAnalysis.Workspace workspace)
+
+		{
+			return service.CreateIncrementalAnalyzer (workspace);
+		}
+
+
+	}
 	public class MonoDevelopWorkspace : Workspace
 	{
 		public const string ServiceLayer = nameof(MonoDevelopWorkspace);
 
 		internal readonly WorkspaceId Id;
+
+		BackgroundCompiler _backgroundCompiler;
+		readonly BackgroundParser _backgroundParser;
 
 		CancellationTokenSource src = new CancellationTokenSource ();
 		bool disposed;
@@ -101,8 +128,36 @@ namespace MonoDevelop.Ide.TypeSystem
 			if (IdeApp.Workspace != null && solution != null) {
 				IdeApp.Workspace.ActiveConfigurationChanged += HandleActiveConfigurationChanged;
 			}
+			// use solution crawler service directly.
+			// use tagger to display squiggles and fadeout
+			// add external error diagnostic update source - http://source.roslyn.io/#Microsoft.VisualStudio.LanguageServices/Implementation/TaskList/ExternalErrorDiagnosticUpdateSource.cs,24
+
 			if (IdeApp.Preferences.EnableSourceAnalysis)
 				DiagnosticProvider.Enable (this, DiagnosticProvider.Options.Syntax);
+
+			_backgroundCompiler = new BackgroundCompiler (this);
+
+			var cacheService = Services.GetService<IWorkspaceCacheService> ();
+			if (cacheService != null) {
+				cacheService.CacheFlushRequested += OnCacheFlushRequested;
+			}
+
+			_backgroundParser = new BackgroundParser (this);
+			_backgroundParser.Start ();
+		}
+
+		void OnCacheFlushRequested (object sender, EventArgs e)
+		{
+			if (_backgroundCompiler != null) {
+				_backgroundCompiler.Dispose ();
+				_backgroundCompiler = null; // PartialSemanticsEnabled will now return false
+			}
+
+			// No longer need cache notifications
+			var cacheService = Services.GetService<IWorkspaceCacheService> ();
+			if (cacheService != null) {
+				cacheService.CacheFlushRequested -= OnCacheFlushRequested;
+			}
 		}
 
 		protected override void Dispose (bool finalize)
@@ -759,11 +814,17 @@ namespace MonoDevelop.Ide.TypeSystem
 
 		protected override void OnDocumentTextChanged (Document document)
 		{
+			if (_backgroundParser != null) {
+				_backgroundParser.Parse (document);
+			}
 			base.OnDocumentTextChanged (document);
 		}
 
 		protected override void OnDocumentClosing (DocumentId documentId)
 		{
+			if (_backgroundParser != null) {
+				_backgroundParser.CancelParse (documentId);
+			}
 			base.OnDocumentClosing (documentId);
 			lock (openDocuments) {
 				var openDoc = openDocuments.FirstOrDefault (d => d.Id == documentId);

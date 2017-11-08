@@ -55,7 +55,7 @@ namespace MonoDevelop.CodeIssues
 			return (ctx.IsAdHocProject || !(ctx.Project is MonoDevelop.Projects.DotNetProject));
 		}
 
-		public static async Task<IEnumerable<Result>> Check (AnalysisDocument analysisDocument, CancellationToken cancellationToken)
+		public static async Task<IEnumerable<Result>> Check (AnalysisDocument analysisDocument, CancellationToken cancellationToken, ImmutableArray<DiagnosticData> results)
 		{
 			var input = analysisDocument.DocumentContext;
 			if (!AnalysisOptions.EnableFancyFeatures || input.Project == null || !input.IsCompileableInProject || input.AnalysisDocument == null)
@@ -95,9 +95,6 @@ namespace MonoDevelop.CodeIssues
 				#if DEBUG
 				Debug.Listeners.Add (consoleTraceListener);
 				#endif
-
-				var diagService = Ide.Composition.CompositionManager.GetExportedValue<IDiagnosticService> ();
-				var results = diagService.GetDiagnostics (input.RoslynWorkspace, input.AnalysisDocument.Project.Id, input.AnalysisDocument.Id, null, false, cancellationToken);
 
 				var resultList = new List<Result> ();
 				foreach (var data in results) {

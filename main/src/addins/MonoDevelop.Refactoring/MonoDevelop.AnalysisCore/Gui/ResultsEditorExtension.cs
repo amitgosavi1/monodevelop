@@ -37,6 +37,16 @@ using MonoDevelop.Ide.Editor;
 using MonoDevelop.Ide.Editor.Extension;
 using MonoDevelop.Ide.Editor.Highlighting;
 
+using MonoDevelop.AnalysisCore;
+using MonoDevelop.Ide.Gui;
+using Microsoft.CodeAnalysis.Diagnostics;
+using Microsoft.CodeAnalysis.CodeFixes;
+using MonoDevelop.CodeActions;
+using MonoDevelop.Core;
+using MonoDevelop.AnalysisCore.Gui;
+using Microsoft.CodeAnalysis.CSharp;
+using System.Diagnostics;
+
 namespace MonoDevelop.AnalysisCore.Gui
 {
 	class AnalysisDocument
@@ -56,6 +66,13 @@ namespace MonoDevelop.AnalysisCore.Gui
 	public class ResultsEditorExtension : TextEditorExtension, IQuickTaskProvider
 	{
 		bool disposed;
+		static IDiagnosticService diagService;
+
+		static ResultsEditorExtension()
+		{
+			diagService = Ide.Composition.CompositionManager.GetExportedValue<IDiagnosticService> ();
+			diagService.DiagnosticsUpdated += OnDiagnosticsUpdated;
+		}
 		
 		protected override void Initialize ()
 		{
@@ -142,24 +159,30 @@ namespace MonoDevelop.AnalysisCore.Gui
 				return;
 			updateTimeout = GLib.Timeout.Add (250, delegate {
 				lock (updateLock) {
-					CancelTask ();
-					src = new CancellationTokenSource ();
-					var token = src.Token;
-					var ad = new AnalysisDocument (Editor, DocumentContext);
-					Task.Run (async () => {
-						try {
-							var result = await CodeDiagnosticRunner.Check (ad, token);
-							if (token.IsCancellationRequested)
-								return;
-							var updater = new ResultsUpdater (this, result, token);
-							updater.Update ();
-						} catch (Exception) {
-						}
-					});
 					updateTimeout = 0;
+					var result = diagService.GetDiagnosticsUpdatedEventArgs (DocumentContext.RoslynWorkspace, DocumentContext.AnalysisDocument.Project.Id, DocumentContext.AnalysisDocument.Id, CancellationToken.None);
+					foreach (var item in result) {
+
+					}
 					return false;
 				}
 			});
+		}
+
+		static void OnDiagnosticsUpdated (object sender, DiagnosticsUpdatedArgs e)
+		{
+			//var ad = new AnalysisDocument (Editor, DocumentContext);
+			//Task.Run (async () => {
+			//	try {
+			//		var mdw = (MonoDevelop.Ide.TypeSystem.MonoDevelopWorkspace)e.Workspace;
+			//		var mdDoc = mdw.GetDocument (e.DocumentId);
+
+			//		var result = await CodeDiagnosticRunner.Check (ad, token, e.Diagnostics);
+			//		var updater = new ResultsUpdater (this, result, token);
+			//		updater.Update ();
+			//	} catch (Exception) {
+			//	}
+			//});
 		}
 
 		public void CancelUpdateTimout ()
